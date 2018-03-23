@@ -1,0 +1,11 @@
+Websites total: 48371
+- Create full sites
+CV log reg model
+/usr/local/lib/python3.5/dist-packages/sklearn/utils/validation.py:475: DataConversionWarning: Data with input dtype int64 was converted to float64 by StandardScaler.
+  warnings.warn(msg, DataConversionWarning)
+[Parallel(n_jobs=-1)]: Done   5 out of   5 | elapsed:   36.5s finished
+[0.86602874 0.88125641 0.89982365 0.91751487 0.92986337 0.93566917
+ 0.93718293 0.93613635 0.93364685 0.93000376] [0.46415888]
+Train on whole dataset
+- Train confusion matrix:  [[251120    144]
+ [  1028   1269]]
