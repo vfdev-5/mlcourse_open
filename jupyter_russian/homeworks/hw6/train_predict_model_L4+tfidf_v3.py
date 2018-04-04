@@ -18,11 +18,15 @@ n_splits = 10
 penalty = 'l2'
 solver = 'lbfgs'
 max_iter = 5000
-Cs = np.logspace(-3, 1, 10)
+Cs = np.logspace(-2, 2, 15)
 class_weight = None
-select_features = False
 
-vectorizer = TfidfVectorizer(max_features=175000, ngram_range=(1, 4))
+
+def tokenizer(s):
+    return s.split(" ")
+
+
+vectorizer = TfidfVectorizer(max_features=20000, ngram_range=(1, 3))
 
 
 yearmonth_scaler = StandardScaler()
@@ -35,7 +39,7 @@ month_encoder = OneHotEncoder(dtype=np.int)
 
 os.environ['JOBLIB_TEMP_FOLDER'] = "/tmp"
 
-PATH_TO_DATA = '../../../data/alice_train'
+PATH_TO_DATA = '../../../data'
 train_df = pd.read_csv(os.path.join(PATH_TO_DATA, 'train_sessions.csv'), index_col='session_id')
 test_df = pd.read_csv(os.path.join(PATH_TO_DATA, 'test_sessions.csv'), index_col='session_id')
 
@@ -60,48 +64,50 @@ with open(os.path.join(PATH_TO_DATA, "site_dic.pkl"), "rb") as input_file:
 
 # Create dataframe for the dictionary
 sites_dict = pd.DataFrame(list(site_dict.keys()), index=list(site_dict.values()), columns=['site'])
-sites_dict.loc[0] = ""
 print(u'Websites total:', sites_dict.shape[0])
 
 y = train_df['target']
 
-print("Create urls")
-all_sites_urls = pd.concat([train_df[sites], test_df[sites]], ignore_index=True)
-train_split_index = len(train_df)
+
+print("- Create count vectors")
+
+full_df = pd.concat([train_df.drop('target', axis=1), test_df], ignore_index=True)
+sites_full = full_df[sites]
+train_indices = sites_full.index[:len(train_df)]
+test_indices = sites_full.index[len(train_df):]
+
 for site_id in sites:
-    print(".", end=" ")
-    all_sites_urls.loc[:, site_id] = sites_dict.loc[all_sites_urls[site_id]].values.flatten()
+    print(" . ", end='')
+    sites_full[site_id] = sites_full[site_id].apply(lambda x: sites_dict['site'][x] + " " if x > 0 else "")
+
+reg_exp = r'(\.com|^www\.|^platform\.|^clients\d\.|^\d+-?\.|^s?-?static\.a?k?\.?|^api\.|^s\.)'
+
+for site_id in sites:
+    print(" . ", end='')
+    sites_full[site_id] = sites_full[site_id].str.replace(reg_exp, '')
 print("")
-all_sites_urls[sites] = all_sites_urls[sites].fillna("").astype('str')
 
-all_sites_sessions = all_sites_urls.loc[:, :].apply(lambda row: " ".join([str(r) for r in row]), axis=1)
+sites_full_aligned = sites_full.loc[:, :].sum(axis=1)
+sites_full_aligned = sites_full_aligned.apply(lambda x: x[:-1])
 
-all_sites_sessions = all_sites_sessions.str.replace("www.", "")
-all_sites_sessions = all_sites_sessions.str.replace(".com", "")
-all_sites_sessions = all_sites_sessions.str.strip()
+vectorizer.fit(sites_full_aligned)
 
-train_sessions = all_sites_sessions[:train_split_index].values
-test_sessions = all_sites_sessions[train_split_index:].values
+train_sites_cvec = vectorizer.transform(sites_full_aligned[train_indices])
+test_sites_cvec = vectorizer.transform(sites_full_aligned[test_indices])
 
-print("- Create tfidf features")
-vectorizer.fit(all_sites_sessions)
-train_sites_cvec = vectorizer.transform(train_sessions)
-test_sites_cvec = vectorizer.transform(test_sessions)
 print(train_sites_cvec.shape)
 print(test_sites_cvec.shape)
 
-
 print("Select features")
-if select_features:
-    log_reg = LogisticRegression(random_state=17,
-                                 max_iter=max_iter, penalty=penalty, solver=solver,
-                                 class_weight=class_weight)
-    model = SelectFromModel(log_reg, threshold="mean")
-    model.fit(train_sites_cvec, y)
-    train_sites_cvec = model.transform(train_sites_cvec)
-    test_sites_cvec = model.transform(test_sites_cvec)
-    print(train_sites_cvec.shape)
-    print(test_sites_cvec.shape)
+log_reg = LogisticRegression(random_state=17,
+                             max_iter=max_iter, penalty=penalty, solver=solver,
+                             class_weight=class_weight)
+model = SelectFromModel(log_reg, threshold="mean")
+model.fit(train_sites_cvec, y)
+train_sites_cvec = model.transform(train_sites_cvec)
+test_sites_cvec = model.transform(test_sites_cvec)
+print(train_sites_cvec.shape)
+print(test_sites_cvec.shape)
 
 
 def get_auc_lr_cv(X, y, max_train_size=None, n_splits=7, seed=12, **kwargs):
@@ -119,6 +125,8 @@ def compute_features(df, sites_sparse, is_train=True):
     df.loc[:, 'weekday'] = df['time1'].apply(lambda x: x.weekday())
     df.loc[:, 'start_hour'] = df['time1'].apply(lambda x: x.hour)
     df.loc[:, 'morning'] = df['time1'].apply(lambda x: int(7 <= x.hour <= 11))
+    df.loc[:, 'afternoon'] = df['time1'].apply(lambda x: int(12 <= x.hour <= 17))
+    df.loc[:, 'evening'] = df['time1'].apply(lambda x: int(18 <= x.hour <= 22))
 
     if is_train:
         yearmonth_scaler.fit(df.loc[:, 'yearmonth'].values.reshape(-1, 1))
@@ -130,12 +138,11 @@ def compute_features(df, sites_sparse, is_train=True):
     start_hour_ohe = start_hour_encoder.transform(df.loc[:, 'start_hour'].values.reshape(-1, 1))
     weekday_ohe = weekday_encoder.transform(df.loc[:, 'weekday'].values.reshape(-1, 1))
     month_ohe = month_encoder.transform(df.loc[:, 'month'].values.reshape(-1, 1))
-    features = ['yearmonth', 'morning']
+    features = ['yearmonth', 'morning', 'afternoon', 'evening']
+
     X = hstack([sites_sparse, df[features].values, start_hour_ohe, weekday_ohe, month_ohe], format='csr')
     return X
 
-
-def add_
 
 print("CV log reg model")
 X_train = compute_features(train_df, train_sites_cvec, is_train=True)
@@ -167,5 +174,6 @@ X_test = X_train = compute_features(test_df, test_sites_cvec, is_train=False)
 y_test = log_reg.predict_proba(X_test)[:, 1]
 
 score = np.max(score)
-write_to_submission_file(y_test, "assignment6_alice_submission_model_L4+tfidf_roc_auc={:.4f}_FN={}_FP={}_TP={}.csv"
+write_to_submission_file(y_test,
+                         "assignment6_alice_submission_model_L4+tfidf_v3_roc_auc={:.4f}_FN={}_FP={}_TP={}.csv"
                          .format(score, m[1, 0], m[0, 1], m[1, 1]))

@@ -35,7 +35,7 @@ month_encoder = OneHotEncoder(dtype=np.int)
 
 os.environ['JOBLIB_TEMP_FOLDER'] = "/tmp"
 
-PATH_TO_DATA = '../../../data/alice_train'
+PATH_TO_DATA = '../../../data'
 train_df = pd.read_csv(os.path.join(PATH_TO_DATA, 'train_sessions.csv'), index_col='session_id')
 test_df = pd.read_csv(os.path.join(PATH_TO_DATA, 'test_sessions.csv'), index_col='session_id')
 

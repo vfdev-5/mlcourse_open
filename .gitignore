@@ -3,6 +3,7 @@ data/stackoverflow_sample_125k.tsv
 data/top10_tags.tsv
 data/movie_reviews_train.csv
 *~
+jupyter_russian/**/*.csv
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
