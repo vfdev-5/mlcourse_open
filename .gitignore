@@ -101,7 +101,7 @@ ENV/
 
 # Hide solutions
 *_solution.ipynb
-
+*solution.py
 
 # Private folders
 *private/
